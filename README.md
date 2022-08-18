@@ -4,10 +4,16 @@ Calculate the responder average treatment effect for binary, continuous and time
 
 ## Installation
 
-You can install the development version of rate from [GitHub](https://github.com/) with:
+A recent version of lava will be required:
 
 ``` r
 # install.packages("devtools")
+devtools::install_github("kkholst/lava")
+```
+
+You can install the development version of rate from [GitHub](https://github.com/) with:
+
+``` r
 devtools::install_github("Andreas-Nordland/rate")
 ```
 
@@ -56,10 +62,10 @@ rate.est <- RATE(
 
 rate.est
 #>      Estimate Std.Err    2.5%    97.5%   P-value
-#> a1     0.2225 0.01773  0.1877  0.25722 4.179e-36
-#> a0     0.3061 0.01964  0.2676  0.34463 8.931e-55
-#> d      0.7464 0.01914  0.7089  0.78387 0.000e+00
-#> rate  -0.1121 0.03345 -0.1777 -0.04654 8.046e-04
+#> a1     0.2254 0.01795  0.1902  0.26060 3.503e-36
+#> a0     0.3396 0.02001  0.3003  0.37877 1.367e-64
+#> d      0.7319 0.01924  0.6942  0.76963 0.000e+00
+#> rate  -0.1559 0.03455 -0.2237 -0.08821 6.400e-06
 ```
 
 ## Simulations

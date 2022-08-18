@@ -17,10 +17,14 @@ Calculate the responder average treatment effect for binary, continuous and time
 
 ## Installation
 
-You can install the development version of rate from [GitHub](https://github.com/) with:
-
+A recent version of lava will be required:
 ``` r
 # install.packages("devtools")
+devtools::install_github("kkholst/lava")
+```
+
+You can install the development version of rate from [GitHub](https://github.com/) with:
+``` r
 devtools::install_github("Andreas-Nordland/rate")
 ```
 
