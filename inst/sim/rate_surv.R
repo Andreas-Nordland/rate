@@ -110,7 +110,7 @@ onerun_cox <- function(n.grp){
 # future::plan("multicore")
 # progressr::handlers(global = TRUE)
 # progressr::handlers("progress")
-# sim.res.cox <- sim(onerun_cox, R = 500, args = list(n.grp = 1e3), seed = 1)
+# sim.res.cox <- sim(onerun_cox, R = 1000, args = list(n.grp = 1e3), seed = 1)
 # future::plan("sequential")
 # summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
