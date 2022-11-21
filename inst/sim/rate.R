@@ -54,9 +54,12 @@ onerun <- function(n){
 # onerun(1e3)
 
 # Simulation
-# plan("multicore")
-# handlers(global = TRUE)
-# R <- 1e3
-# n <- 1e3
-# res <- sim(onerun, R = R, args = list(n = n), seed = TRUE)
-# summary(res,estimate=c(1,3),se=c(2,4), true = c(Psi0, Psi0))
+plan("multicore")
+handlers(global = TRUE)
+R <- 1e3
+n <- 1e3
+res <- sim(onerun, R = R, args = list(n = n), seed = TRUE)
+plan("sequential")
+summary(res,estimate=c(1,3),se=c(2,4), true = c(Psi0, Psi0))
+
+save.image(file = "simulation_super.RData")
