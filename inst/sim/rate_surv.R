@@ -1,8 +1,8 @@
 library(future.apply)
 library(lava)
 library(survival)
-library(mets)
 library(rate)
+library(mets)
 
 sim_surv <- function(n.grp, beta, zeta, kappa){
   n <- 2 * n.grp
@@ -60,17 +60,17 @@ par0 <- list(
   tau = 0.5
 )
 
-# True values ----------------------------------------------------------
+# true values ----------------------------------------------------------
 
-# set.seed(1)
-# d0 <- sim_surv(n.grp = 5e6, beta = par0$beta, zeta = par0$zeta, kappa = par0$kappa)
-# Psi0_A1 <- mean(((d0$TT1 <= par0$tau)))
-# Psi0_A0 <- mean((d0$TT0 <= par0$tau))
-# Psi0_D1 <- mean(d0$D[d0$A == 1])
-# Psi0 <- mean(((d0$TT1 <= par0$tau) - (d0$TT0 <= par0$tau))[d0$D1 == 1])
-# rm(d0)
+set.seed(1)
+d0 <- sim_surv(n.grp = 5e6, beta = par0$beta, zeta = par0$zeta, kappa = par0$kappa)
+Psi0_A1 <- mean(((d0$TT1 <= par0$tau)))
+Psi0_A0 <- mean((d0$TT0 <= par0$tau))
+Psi0_D1 <- mean(d0$D[d0$A == 1])
+Psi0 <- mean(((d0$TT1 <= par0$tau) - (d0$TT0 <= par0$tau))[d0$D1 == 1])
+rm(d0)
 
-# Cox ---------------------------------------------------------------------
+## Cox ---------------------------------------------------------------------
 
 onerun_cox <- function(n.grp){
   dt <- sim_surv(
@@ -80,9 +80,10 @@ onerun_cox <- function(n.grp){
     kappa = par0$kappa
   )
 
-  require("mets")
+  require("rate")
   require("SuperLearner")
-  est <- rate:::RATE.surv(
+  require("mets")
+  est <- RATE.surv(
     treatment = A ~ 1,
     post.treatment = D ~ A * W,
     SL.args.post.treatment = list(family = binomial(),
@@ -102,19 +103,17 @@ onerun_cox <- function(n.grp){
   )
   return(out)
 }
-# test
 # set.seed(1)
 # onerun_cox(1e3)
 
-# # Simulation
-# future::plan("multicore")
-# progressr::handlers(global = TRUE)
-# progressr::handlers("progress")
-# sim.res.cox <- sim(onerun_cox, R = 1000, args = list(n.grp = 1e3), seed = 1)
-# future::plan("sequential")
-# summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+future::plan("multisession")
+progressr::handlers(global = TRUE)
+progressr::handlers("progress")
+sim.res.cox <- sim(onerun_cox, R = 1000, args = list(n.grp = 1e3), seed = 1)
+future::plan("sequential")
+summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-# Super Learner & Ranger -----------------------------------------
+## Super Learner & Ranger -----------------------------------------
 
 onerun_ranger <- function(n.grp){
   dt <- sim_surv(
@@ -124,8 +123,9 @@ onerun_ranger <- function(n.grp){
     kappa = par0$kappa
   )
 
-  require("ranger")
   require("SuperLearner")
+  require("rate")
+  require("ranger")
   est <- RATE.surv(
     treatment = A ~ 1,
     post.treatment = D ~ A * W,
@@ -148,14 +148,136 @@ onerun_ranger <- function(n.grp){
   )
   return(out)
 }
-# test
 # set.seed(1)
 # onerun_ranger(1e3)
 
-# # Simulation
+onerun_rfsrc <- function(n.grp){
+  dt <- sim_surv(
+    n = n.grp,
+    beta = par0$beta,
+    zeta = par0$zeta,
+    kappa = par0$kappa
+  )
+
+  require("rate")
+  require("randomForestSRC")
+  est <- RATE.surv(
+    treatment = A ~ 1,
+    post.treatment = D ~ A * W,
+    SL.args.post.treatment = list(family = binomial(),
+                                  SL.library = c("SL.glm")),
+    response = Surv(time, event) ~ W + D,
+    call.response = "rfsrc",
+    args.response = list(save.memory = TRUE, ntime = NULL),
+    censoring = Surv(time, event == 0) ~ W + A + D,
+    args.censoring = list(save.memory = TRUE, ntime = NULL),
+    call.censoring = "rfsrc",
+    tau = par0$tau,
+    data = dt,
+    M = 2
+  )
+
+  out <- c(
+    est$coef,
+    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
+  )
+  return(out)
+}
+# set.seed(1)
+# onerun_rfsrc(1e3)
+
+# rfsrc
 # future::plan("sequential")
 # progressr::handlers(global = TRUE)
 # progressr::handlers("progress")
-# sim.res.ranger <- sim(onerun_ranger, R = 500, args = list(n.grp = 1e3), seed = 2)
-# summary(sim.res.ranger, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+# sim.res.rfsrc <- sim(onerun_rfsrc, R = 10, args = list(n.grp = 1e3), seed = 1)
+# summary(sim.res.rfsrc, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+
+# ranger
+future::plan(list(tweak("multisession", workers = 2)))
+future::plan("sequential")
+progressr::handlers(global = TRUE)
+progressr::handlers("progress")
+sim.res.ranger <- sim(onerun_ranger, R = 500, args = list(n.grp = 1e3), seed = 2)
+summary(sim.res.ranger, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+
+### Doubly Robost ----
+
+onerun_ranger_response <- function(n.grp){
+  dt <- sim_surv(
+    n = n.grp,
+    beta = par0$beta,
+    zeta = par0$zeta,
+    kappa = par0$kappa
+  )
+
+  require("rate")
+  require("ranger")
+  est <- RATE.surv(
+    treatment = A ~ 1,
+    post.treatment = D ~ A * W,
+    SL.args.post.treatment = list(family = binomial(),
+                                  SL.library = c("SL.glm")),
+    response = Surv(time, event) ~ W*D,
+    call.response = "phreg",
+    censoring = Surv(time, event == 0) ~ W + A + D,
+    args.censoring = list(num.threads = NULL),
+    call.censoring = "ranger",
+    tau = par0$tau,
+    data = dt,
+    M = 2
+  )
+
+  out <- c(
+    est$coef,
+    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
+  )
+  return(out)
+}
+
+onerun_ranger_censoring <- function(n.grp){
+  dt <- sim_surv(
+    n = n.grp,
+    beta = par0$beta,
+    zeta = par0$zeta,
+    kappa = par0$kappa
+  )
+
+  require("rate")
+  require("ranger")
+  est <- RATE.surv(
+    treatment = A ~ 1,
+    post.treatment = D ~ A * W,
+    SL.args.post.treatment = list(family = binomial(),
+                                  SL.library = c("SL.glm")),
+    response = Surv(time, event) ~ W + D,
+    args.response = list(num.threads = NULL),
+    call.response = "ranger",
+    censoring = Surv(time, event == 0) ~ W*A + D,
+    call.censoring = "phreg",
+    tau = par0$tau,
+    data = dt,
+    M = 2
+  )
+
+  out <- c(
+    est$coef,
+    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
+  )
+  return(out)
+}
+
+future::plan("sequential")
+progressr::handlers(global = TRUE)
+progressr::handlers("progress")
+sim.res.ranger.response <- sim(onerun_ranger_response, R = 500, args = list(n.grp = 1e3), seed = 2)
+summary(sim.res.ranger.response, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+progressr::handlers(global = TRUE)
+progressr::handlers("progress")
+sim.res.ranger.censoring <- sim(onerun_ranger_censoring, R = 500, args = list(n.grp = 1e3), seed = 2)
+summary(sim.res.ranger.censoring, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+
+# save --------------------------------------------------------------------
+
+save.image(file = "rate_surv.RData")
 

@@ -11,4 +11,4 @@ Encoding: UTF-8
 LazyData: true
 Imports:
   lava (>= 1.7)
-RoxygenNote: 7.2.0
+RoxygenNote: 7.2.1
