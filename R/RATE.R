@@ -336,7 +336,7 @@ RATE.surv <- function(response, post.treatment, treatment, censoring,
       event = valid.event,
       tau = tau
     )
-    sc <- diag(cumhaz(C.est, newdata = valid_data, times = valid.time)$surv)
+    sc.min.tau <- diag(cumhaz(C.est, newdata = valid_data, times = pmin(valid.time, tau))$surv)
 
     rm(T.est, C.est)
 
@@ -345,8 +345,11 @@ RATE.surv <- function(response, post.treatment, treatment, censoring,
       pr.treatment <- mean(A)
     }
 
-    phi.0 <- (1-A) / (1-pr.treatment) * (valid.event / sc * (valid.time <= tau) + hmc) + (1 - (1-A) / (1-pr.treatment)) * f.0
-    phi.1 <- A / (pr.treatment) * (valid.event / sc * (valid.time <= tau) + hmc) + (1 - A / (pr.treatment)) * f.1
+    # calculating \Delta(\tau) = I\{C > \min(T, \tau)\}:
+    valid.delta.tau <- (valid.event == 1) | (valid.time >= tau)
+
+    phi.0 <- (1-A) / (1-pr.treatment) * (valid.delta.tau / sc.min.tau * (valid.time <= tau) + hmc) + (1 - (1-A) / (1-pr.treatment)) * f.0
+    phi.1 <- A / (pr.treatment) * (valid.delta.tau / sc.min.tau * (valid.time <= tau) + hmc) + (1 - A / (pr.treatment)) * f.1
 
     D <- as.numeric(get_response(post.treatment, valid_data))
     valid_data[lava::getoutcome(treatment)] <- 1

@@ -70,7 +70,7 @@ Psi0_D1 <- mean(d0$D[d0$A == 1])
 Psi0 <- mean(((d0$TT1 <= par0$tau) - (d0$TT0 <= par0$tau))[d0$D1 == 1])
 rm(d0)
 
-## Cox ---------------------------------------------------------------------
+# Cox ---------------------------------------------------------------------
 
 onerun_cox <- function(n.grp){
   dt <- sim_surv(
@@ -106,14 +106,15 @@ onerun_cox <- function(n.grp){
 # set.seed(1)
 # onerun_cox(1e3)
 
-future::plan("multisession")
 progressr::handlers(global = TRUE)
 progressr::handlers("progress")
-sim.res.cox <- sim(onerun_cox, R = 1000, args = list(n.grp = 1e3), seed = 1)
+
+future::plan(list(tweak("multisession", workers = 4)))
+sim.res.cox <- sim(onerun_cox, R = 500, args = list(n.grp = 1e3), seed = 1)
 future::plan("sequential")
 summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-## Super Learner & Ranger -----------------------------------------
+# Super Learner & Ranger -----------------------------------------
 
 onerun_ranger <- function(n.grp){
   dt <- sim_surv(
@@ -187,21 +188,19 @@ onerun_rfsrc <- function(n.grp){
 # onerun_rfsrc(1e3)
 
 # rfsrc
-# future::plan("sequential")
+# future::plan(list(tweak("multisession", workers = 4)))
 # progressr::handlers(global = TRUE)
 # progressr::handlers("progress")
 # sim.res.rfsrc <- sim(onerun_rfsrc, R = 10, args = list(n.grp = 1e3), seed = 1)
 # summary(sim.res.rfsrc, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
 # ranger
-future::plan(list(tweak("multisession", workers = 2)))
-future::plan("sequential")
-progressr::handlers(global = TRUE)
-progressr::handlers("progress")
+future::plan(list(tweak("multisession", workers = 4)))
 sim.res.ranger <- sim(onerun_ranger, R = 500, args = list(n.grp = 1e3), seed = 2)
+future::plan("sequential")
 summary(sim.res.ranger, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-### Doubly Robost ----
+# Doubly Robost ----
 
 onerun_ranger_response <- function(n.grp){
   dt <- sim_surv(
@@ -267,13 +266,11 @@ onerun_ranger_censoring <- function(n.grp){
   return(out)
 }
 
-future::plan("sequential")
-progressr::handlers(global = TRUE)
-progressr::handlers("progress")
+future::plan(list(tweak("multisession", workers = 4)))
+
 sim.res.ranger.response <- sim(onerun_ranger_response, R = 500, args = list(n.grp = 1e3), seed = 2)
 summary(sim.res.ranger.response, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
-progressr::handlers(global = TRUE)
-progressr::handlers("progress")
+
 sim.res.ranger.censoring <- sim(onerun_ranger_censoring, R = 500, args = list(n.grp = 1e3), seed = 2)
 summary(sim.res.ranger.censoring, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
