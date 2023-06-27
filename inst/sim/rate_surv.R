@@ -1,8 +1,8 @@
-library(future.apply)
-library(lava)
-library(survival)
-library(rate)
-library(mets)
+library("future.apply")
+library("lava")
+library("survival")
+library("rate")
+library("mets")
 
 sim_surv <- function(n.grp, beta, zeta, kappa){
   n <- 2 * n.grp
@@ -109,7 +109,7 @@ onerun_cox <- function(n.grp){
 progressr::handlers(global = TRUE)
 progressr::handlers("progress")
 
-future::plan(list(tweak("multisession", workers = 4)))
+future::plan(list(tweak("multisession", workers = 10)))
 sim.res.cox <- sim(onerun_cox, R = 500, args = list(n.grp = 1e3), seed = 1)
 future::plan("sequential")
 summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
@@ -188,14 +188,14 @@ onerun_rfsrc <- function(n.grp){
 # onerun_rfsrc(1e3)
 
 # rfsrc
-# future::plan(list(tweak("multisession", workers = 4)))
+# future::plan(list(tweak("multisession", workers = 10)))
 # progressr::handlers(global = TRUE)
 # progressr::handlers("progress")
 # sim.res.rfsrc <- sim(onerun_rfsrc, R = 10, args = list(n.grp = 1e3), seed = 1)
 # summary(sim.res.rfsrc, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
 # ranger
-future::plan(list(tweak("multisession", workers = 4)))
+future::plan(list(tweak("multisession", workers = 10)))
 sim.res.ranger <- sim(onerun_ranger, R = 500, args = list(n.grp = 1e3), seed = 2)
 future::plan("sequential")
 summary(sim.res.ranger, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
@@ -266,7 +266,7 @@ onerun_ranger_censoring <- function(n.grp){
   return(out)
 }
 
-future::plan(list(tweak("multisession", workers = 4)))
+future::plan(list(tweak("multisession", workers = 10)))
 
 sim.res.ranger.response <- sim(onerun_ranger_response, R = 500, args = list(n.grp = 1e3), seed = 2)
 summary(sim.res.ranger.response, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
