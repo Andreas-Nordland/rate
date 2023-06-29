@@ -8,7 +8,7 @@ library("rate")
 progressr::handlers(global = TRUE)
 future::plan(list(tweak("multisession", workers = 10)))
 
-R0 <- 1
+R0 <- 500
 
 sim_surv <- function(n.grp, beta, zeta, kappa){
   n <- 2 * n.grp
