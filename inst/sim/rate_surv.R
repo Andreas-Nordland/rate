@@ -3,12 +3,10 @@ library("lava")
 library("survival")
 library("rate")
 library("mets")
-library("rate")
 
 progressr::handlers(global = TRUE)
-future::plan(list(tweak("multisession", workers = 10)))
-
-R0 <- 500
+R0 <- 1000
+n.grp0 <- 500
 
 sim_surv <- function(n.grp, beta, zeta, kappa){
   n <- 2 * n.grp
@@ -26,16 +24,15 @@ sim_surv <- function(n.grp, beta, zeta, kappa){
   pd <- lava::expit(kappa[1] + kappa[2] * W)
   D1 <- rbinom(n,1,pd)
   D0 <- rep(0, n)
-
   D <- D1 * A + D0 * (1-A)
 
   # simulate T
-  TT1 <- c(unlist(rexp(n, 1) / exp(matrix(c(W, D1, W * D1), ncol = 3) %*% beta)))
-  TT0 <- c(unlist(rexp(n, 1) / exp(matrix(c(W, D0, W * D0), ncol = 3) %*% beta)))
+  TT1 <- c(unlist(rexp(n, 1) / exp(matrix(c(rep(1,n),W, D1, W * D1), ncol = 4) %*% beta)))
+  TT0 <- c(unlist(rexp(n, 1) / exp(matrix(c(rep(1,n),W, D0, W * D0), ncol = 4) %*% beta)))
   TT <- TT1 * A + TT0 * (1-A)
 
   # simulate C
-  C <- c(unlist(rexp(n, 1) / exp(matrix(c(W, A, D, W * A), ncol = 4) %*% zeta)))
+  C <- c(unlist(rexp(n, 1) / exp(matrix(c(rep(1,n), A, D), ncol = 3) %*% zeta)))
 
   time <- apply(cbind(TT, C), 1, min)
   event <- TT < C
@@ -60,8 +57,8 @@ sim_surv <- function(n.grp, beta, zeta, kappa){
 }
 
 par0 <- list(
-  beta = c(0.6, -0.5, -0.3),
-  zeta = c(0.2, -0.4, -0.8, 0.6),
+  beta = c(-2, 2, -0.2, -0.4),
+  zeta = c(1, 1, -1),
   kappa = c(2, -0.5),
   tau = 0.5
 )
@@ -76,31 +73,50 @@ Psi0_D1 <- mean(d0$D[d0$A == 1])
 Psi0 <- mean(((d0$TT1 <= par0$tau) - (d0$TT0 <= par0$tau))[d0$D1 == 1])
 rm(d0)
 
-# Cox ---------------------------------------------------------------------
 
-onerun_cox <- function(n.grp){
+# onerun ------------------------------------------------------------------
+
+onerun <- function(n.grp,
+                   treatment = A ~ 1,
+                   post.treatment = D ~ A * W,
+                   call.response = "phreg",
+                   response = Surv(time, event) ~ W * D,
+                   args.response = list(),
+                   call.censoring = "phreg",
+                   censoring = Surv(time, event == 0) ~ A + D,
+                   args.censoring = list(),
+                   M = 1,
+                   return.data = FALSE
+){
   dt <- sim_surv(
     n = n.grp,
     beta = par0$beta,
     zeta = par0$zeta,
     kappa = par0$kappa
   )
+  if (return.data)
+    return(dt
+           )
 
   require("rate")
   require("SuperLearner")
   require("mets")
+  require("ranger")
   est <- RATE.surv(
-    treatment = A ~ 1,
-    post.treatment = D ~ A * W,
+    treatment = treatment,
+    post.treatment = post.treatment,
     SL.args.post.treatment = list(family = binomial(),
-                                  SL.library = c("SL.glm")),
-    response = Surv(time, event) ~ W*D,
-    call.response = "phreg",
-    censoring = Surv(time, event == 0) ~ W*A + D,
-    call.censoring = "phreg",
+                                  SL.library = c("SL.glm"),
+                                  cvControl = SuperLearner.CV.control(V = 2L)),
+    response = response,
+    call.response = call.response,
+    args.response = args.response,
+    censoring = censoring,
+    call.censoring = call.censoring,
+    args.censoring = args.censoring,
     tau = par0$tau,
     data = dt,
-    M = 2
+    M = M
   )
 
   out <- c(
@@ -110,167 +126,75 @@ onerun_cox <- function(n.grp){
   return(out)
 }
 # set.seed(1)
-# onerun_cox(1e3)
+# onerun(1e3)
 
-sim.res.cox <- sim(onerun_cox, R = R0, args = list(n.grp = 1e3), seed = 1)
-# summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+# diagnostics --------------------------------------------------------------------
 
-# Super Learner & Ranger -----------------------------------------
+# tmp <- onerun(n.grp = n.grp0, return.data = TRUE)
+# sf <- survfit(Surv(time, event) ~ A, data = tmp)
+# plot(sf, mark.time = TRUE)
+# table(tmp$event)
+#
+# plot(x = x = tmp$TT, y = tmp$C)
+# abline(a = 0, b = 1)
 
-onerun_ranger <- function(n.grp){
-  dt <- sim_surv(
-    n = n.grp,
-    beta = par0$beta,
-    zeta = par0$zeta,
-    kappa = par0$kappa
-  )
+# simulation --------------------------------------------------------------
 
-  require("SuperLearner")
-  require("rate")
-  require("ranger")
-  est <- RATE.surv(
-    treatment = A ~ 1,
-    post.treatment = D ~ A * W,
-    SL.args.post.treatment = list(family = binomial(),
-                                  SL.library = c("SL.glm")),
-    response = Surv(time, event) ~ W + D,
-    args.response = list(num.threads = 1),
-    call.response = "ranger",
-    censoring = Surv(time, event == 0) ~ W + A + D,
-    args.censoring = list(num.threads = 1),
-    call.censoring = "ranger",
-    tau = par0$tau,
-    data = dt,
-    M = 2
-  )
+start <- Sys.time()
 
-  out <- c(
-    est$coef,
-    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
-  )
-  return(out)
-}
-# set.seed(1)
-# onerun_ranger(1e3)
+# true cox models:
+future::plan(list(tweak("multisession", workers = 6)))
+sim.res.cox <- sim(onerun, R = R0, args = list(n.grp = n.grp0), seed = 1)
+future::plan("sequential")
+summary(sim.res.cox, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-onerun_rfsrc <- function(n.grp){
-  dt <- sim_surv(
-    n = n.grp,
-    beta = par0$beta,
-    zeta = par0$zeta,
-    kappa = par0$kappa
-  )
+# simple cox models:
+future::plan(list(tweak("multisession", workers = 6)))
+sim.res.cox.simple <- sim(onerun, R = R0,
+                           args = list(n.grp = n.grp0,
+                                       post.treatment = D ~ A,
+                                       response = Surv(time, event) ~ D,
+                                       censoring = Surv(time, event == 0) ~ A+D),
+                           seed = 1)
+future::plan("sequential")
+summary(sim.res.cox.simple, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-  require("rate")
-  require("randomForestSRC")
-  est <- RATE.surv(
-    treatment = A ~ 1,
-    post.treatment = D ~ A * W,
-    SL.args.post.treatment = list(family = binomial(),
-                                  SL.library = c("SL.glm")),
-    response = Surv(time, event) ~ W + D,
-    call.response = "rfsrc",
-    args.response = list(save.memory = TRUE, ntime = NULL),
-    censoring = Surv(time, event == 0) ~ W + A + D,
-    args.censoring = list(save.memory = TRUE, ntime = NULL),
-    call.censoring = "rfsrc",
-    tau = par0$tau,
-    data = dt,
-    M = 2
-  )
+# biased cox models:
+future::plan(list(tweak("multisession", workers = 6)))
+sim.res.cox.bias <- sim(onerun, R = R0,
+                        args = list(n.grp = n.grp0,
+                                    response = Surv(time, event) ~ W * A,
+                                    censoring = Surv(time, event == 0) ~ W * A),
+                        seed = 1)
+future::plan("sequential")
+summary(sim.res.cox.bias, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
-  out <- c(
-    est$coef,
-    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
-  )
-  return(out)
-}
-# set.seed(1)
-# onerun_rfsrc(1e3)
+end <- Sys.time()
 
-# rfsrc
-# future::plan(list(tweak("multisession", workers = 10)))
-# progressr::handlers(global = TRUE)
-# sim.res.rfsrc <- sim(onerun_rfsrc, R = 10, args = list(n.grp = 1e3), seed = 1)
-# summary(sim.res.rfsrc, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
-
-# ranger
-sim.res.ranger <- sim(onerun_ranger, R = R0, args = list(n.grp = 1e3), seed = 2)
-# summary(sim.res.ranger, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
-
-# Doubly Robost ----
-
-onerun_ranger_response <- function(n.grp){
-  dt <- sim_surv(
-    n = n.grp,
-    beta = par0$beta,
-    zeta = par0$zeta,
-    kappa = par0$kappa
-  )
-
-  require("rate")
-  require("ranger")
-  est <- RATE.surv(
-    treatment = A ~ 1,
-    post.treatment = D ~ A * W,
-    SL.args.post.treatment = list(family = binomial(),
-                                  SL.library = c("SL.glm")),
-    response = Surv(time, event) ~ W*D,
-    call.response = "phreg",
-    censoring = Surv(time, event == 0) ~ W + A + D,
-    args.censoring = list(num.threads = 1),
-    call.censoring = "ranger",
-    tau = par0$tau,
-    data = dt,
-    M = 2
-  )
-
-  out <- c(
-    est$coef,
-    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
-  )
-  return(out)
-}
-
-onerun_ranger_censoring <- function(n.grp){
-  dt <- sim_surv(
-    n = n.grp,
-    beta = par0$beta,
-    zeta = par0$zeta,
-    kappa = par0$kappa
-  )
-
-  require("rate")
-  require("ranger")
-  est <- RATE.surv(
-    treatment = A ~ 1,
-    post.treatment = D ~ A * W,
-    SL.args.post.treatment = list(family = binomial(),
-                                  SL.library = c("SL.glm")),
-    response = Surv(time, event) ~ W + D,
-    args.response = list(num.threads = 1),
-    call.response = "ranger",
-    censoring = Surv(time, event == 0) ~ W*A + D,
-    call.censoring = "phreg",
-    tau = par0$tau,
-    data = dt,
-    M = 2
-  )
-
-  out <- c(
-    est$coef,
-    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
-  )
-  return(out)
-}
-
-sim.res.ranger.response <- sim(onerun_ranger_response, R = R0, args = list(n.grp = 1e3), seed = 2)
-# summary(sim.res.ranger.response, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
-
-sim.res.ranger.censoring <- sim(onerun_ranger_censoring, R = R0, args = list(n.grp = 1e3), seed = 2)
-# summary(sim.res.ranger.censoring, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
 
 # save --------------------------------------------------------------------
 
-save.image(file = "rate_surv.RData")
+end <- Sys.time()
 
+save.image(file = "rate_surv_2.RData")
+
+# latex output ------------------------------------------------------------
+
+kappa0_string <- paste("[",paste(par0$kappa, collapse = ", "), "]", sep = "")
+beta0_string <- paste("[",paste(par0$beta, collapse = ", "), "]", sep = "")
+zeta0_string <- paste("[",paste(par0$zeta, collapse = ", "), "]", sep = "")
+n <- 2 * n.grp0 # 1000 in each group
+tau0 <- par0$tau
+
+idx <- c(1,2,10, 11, 12, 14)
+res.tab <- rbind(
+  summary(sim.res.cox, estimate = 4, se = 8, true = Psi0)[idx, ],
+  summary(sim.res.cox.simple, estimate = 4, se = 8, true = Psi0)[idx, ],
+  summary(sim.res.cox.bias, estimate = 4, se = 8, true = Psi0)[idx, ]
+)
+
+dimnames(res.tab)[[1]] <- c("$X = (W, A, D)$", "$X = (A, D)$", "$X = (W,A)$")
+
+library("xtable")
+xtab <- xtable(res.tab, method = "compact", label = "tab:surv", digits = 4)
+print(xtab, sanitize.text.function = function(x){x})
