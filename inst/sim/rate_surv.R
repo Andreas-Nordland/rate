@@ -180,12 +180,6 @@ save.image(file = "rate_surv_2.RData")
 
 # latex output ------------------------------------------------------------
 
-kappa0_string <- paste("[",paste(par0$kappa, collapse = ", "), "]", sep = "")
-beta0_string <- paste("[",paste(par0$beta, collapse = ", "), "]", sep = "")
-zeta0_string <- paste("[",paste(par0$zeta, collapse = ", "), "]", sep = "")
-n <- 2 * n.grp0 # 1000 in each group
-tau0 <- par0$tau
-
 idx <- c(1,2,10, 11, 12, 14)
 res.tab <- rbind(
   summary(sim.res.cox, estimate = 4, se = 8, true = Psi0)[idx, ],
