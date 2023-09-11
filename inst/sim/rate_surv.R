@@ -3,6 +3,7 @@ library("lava")
 library("survival")
 library("rate")
 library("mets")
+library("data.table")
 
 progressr::handlers(global = TRUE)
 R0 <- 1000
@@ -63,7 +64,7 @@ par0 <- list(
   tau = 0.5
 )
 
-# true values ----------------------------------------------------------
+# true causal target parameter ----------------------------------------------------------
 
 set.seed(1)
 d0 <- sim_surv(n.grp = 5e6, beta = par0$beta, zeta = par0$zeta, kappa = par0$kappa)
@@ -188,6 +189,82 @@ res.tab <- rbind(
 )
 
 dimnames(res.tab)[[1]] <- c("$X = (W, A, D)$", "$X = (A, D)$", "$X = (W,A)$")
+
+library("xtable")
+xtab <- xtable(res.tab, method = "compact", label = "tab:surv", digits = 4)
+print(xtab, sanitize.text.function = function(x){x})
+
+
+# kaplan-meier ------------------------------------------------------------
+
+onerun_km <- function(n.grp,
+                           treatment = A ~ 1,
+                           post.treatment = D ~ A,
+                           call.response = "phreg",
+                           response = Surv(time, event) ~ A,
+                           args.response = list(),
+                           call.censoring = "phreg",
+                           censoring = Surv(time, event == 0) ~ 1,
+                           args.censoring = list(),
+                           M = 1,
+                           return.data = FALSE
+){
+  dt <- sim_surv(
+    n = n.grp,
+    beta = par0$beta,
+    zeta = par0$zeta,
+    kappa = par0$kappa
+  )
+  if (return.data)
+    return(dt
+    )
+
+  require("rate")
+  require("SuperLearner")
+  require("mets")
+  require("ranger")
+  est <- RATE.surv(
+    treatment = treatment,
+    post.treatment = post.treatment,
+    SL.args.post.treatment = list(family = binomial(),
+                                  SL.library = c("SL.glm"),
+                                  cvControl = SuperLearner.CV.control(V = 2L)),
+    response = response,
+    call.response = call.response,
+    args.response = args.response,
+    censoring = censoring,
+    call.censoring = call.censoring,
+    args.censoring = args.censoring,
+    tau = par0$tau,
+    data = dt,
+    M = M
+  )
+
+  km <- survfit(response, data = dt)
+  skm <- summary(km)
+  pd <- data.table(surv = skm$surv, time = skm$time, strata = skm$strata)
+  ss <- 1 - pd[time < par0$tau][,.SD[.N], strata]$surv
+  te <- ss[2] - ss[1]
+
+  coef <- c(ss[2], ss[1], est$coef[3], te/est$coef[3])
+  names(coef) <- names(est$coef)
+  out <- c(
+    coef,
+    setNames(diag(est$vcov)^(0.5), paste(names(est$coef), ".se", sep = ""))
+  )
+  return(out)
+}
+# onerun_km(n.grp = 500)
+
+future::plan(list(tweak("multisession", workers = 6)))
+sim.res.km <- sim(onerun_km, R = R0, args = list(n.grp = n.grp0), seed = 1)
+future::plan("sequential")
+summary(sim.res.km, estimate = 1:4, se = 5:8, true = c(Psi0_A1, Psi0_A0, Psi0_D1, Psi0))
+
+idx <- c(1,2,10, 11, 12, 14)
+res.tab <- rbind(
+  summary(sim.res.km, estimate = 4, se = 8, true = Psi0)[idx, ]
+)
 
 library("xtable")
 xtab <- xtable(res.tab, method = "compact", label = "tab:surv", digits = 4)
